@@ -892,8 +892,8 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
     gamma2 = gamma * gamma
     
     sinpsi = np.multiply(np.sin(lat),np.sin(sd)) - np.multiply(np.multiply(np.cos(lat),np.cos(sd)),np.cos(h))
-    psi = (np.multiply(np.arcsin(sinpsi),180) / np.pi).to_numpy() # Nick added .to_numpy()
-    solarmax = (np.multiply(SC,sinpsi) / gamma2).to_numpy() # Nick added .to_numpy()
+    psi = np.multiply(np.arcsin(sinpsi),180) / np.pi
+    solarmax = np.multiply(SC,sinpsi) / gamma2
     #solarmax=1380*sinpsi*(0.61+0.20*sinpsi);
     
     T = np.minimum(2,sw_dn / solarmax)

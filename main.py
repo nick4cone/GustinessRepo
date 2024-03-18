@@ -13,8 +13,8 @@ import cartopy.crs as ccrs
 from matplotlib.dates import date2num, num2date, DateFormatter, MonthLocator
 from matplotlib.dates import DayLocator, HourLocator
 from sklearn.linear_model import LinearRegression
-from COARE.coare36vn_zrf_et_wa import coare36vn_zrf_et_wa
-from COARE.coare36vn_zrf_et_nf import coare36vn_zrf_et_nf
+from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
+from COARE.coare_no_ug_param import coare_no_ug_param
 
 
 # %%
@@ -139,7 +139,7 @@ mean60min = SD.data.groupby_bins(SD.data.time, bin_edge).mean()
 
 # %%
 # run COARE with no gustiness parameter
-coare_out = coare36vn_zrf_et_nf(
+coare_out = coare_no_ug_param(
     u=mean60min.wind_speed.values,  # scalar mean wind
     zu=5.2,
     t=mean60min.TEMP_AIR_MEAN.values,
@@ -164,7 +164,7 @@ latent = coare_out[:, 3]
 thflx = sensible + latent  # positive cools the ocean (heats the atmosphere)
 
 # run coare with parameterized gustiness ug
-coare_out_p = coare36vn_zrf_et_wa(
+coare_out_p = coare36vn_zrf_et(
     u=np.sqrt(mean60min.UWND_MEAN.values**2 + mean60min.VWND_MEAN.values**2),  # vector mean wind
     zu=5.2,
     t=mean60min.TEMP_AIR_MEAN.values,

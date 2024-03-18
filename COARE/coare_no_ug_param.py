@@ -1,31 +1,12 @@
 """
 Functions for COARE model version 3.6 bulk flux calculations.
 
-Translated from MATLAB scripts written by Jim Edson and Chris Fairall, 
-further edited by Elizabeth Thompson. Main Matalb script source is coare36vn_zrf_et.m
-
-Execute '%run coare36vn_zrf_et' from the iPython command line for test run with
-'test_36_data.txt' input data file. 
-Code can also be imported as a module so that subfunctions can be used independently if desired.
-List of functions in this code are:
-    ['RHcalc',
-    'albedo_vector',
-    'bucksat',
-    'coare36vn_zrf_et',
-    'grv',
-    'psit_26',
-    'psiu_26',
-    'psiu_40',
-    'qsat26air',
-    'qsat26sea']
-
-ludovic Bariteau, CU/CIRES, NOAA/ESRL/PSL
-v1: August 2022
+coare36vn_zrf_et.py with no gustiness parameter
 """
 import numpy as np
 import os
     
-def coare36vn_zrf_et_wa(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0):   
+def coare_no_ug_param(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp=None, sigH=None, zrf_u=10.0, zrf_t=10.0, zrf_q=10.0):   
 #**************************************************************************
 # VERSION INFO:
     
@@ -412,7 +393,7 @@ def coare36vn_zrf_et_wa(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd,
     dq = Qs - Q
     ta = t + T2K
     tv = np.multiply(ta,(1 + 0.61 * Q))
-    gust = 0.5
+    gust = 0.0 # gust = 0.5
     dT_skin = 0.3
     ut = np.sqrt(du ** 2 + gust ** 2)
     u10 = np.multiply(ut,np.log(10 / 0.0001)) / np.log(zu / 0.0001)
@@ -513,9 +494,9 @@ def coare36vn_zrf_et_wa(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd,
         # Q and ta values should be at measurement height, not adjusted heights
         tvsr = np.multiply(tsr,(1 + np.multiply(0.61,Q))) + np.multiply(0.61 * ta,qsr)
         tssr = np.multiply(tsr,(1 + np.multiply(0.51,Q))) + np.multiply(0.51 * ta,qsr)
-        Bf = np.multiply(np.multiply(- grav / ta,usr),tvsr)
-        gust = 0.2 * np.ones(N)
-        k = np.array(np.where(Bf > 0))
+        # Bf = np.multiply(np.multiply(- grav / ta,usr),tvsr)
+        gust = np.zeros(N) # gust = 0.2 * np.ones(N)
+        # k = np.array(np.where(Bf > 0))
         ### gustiness in this way is from the original code. Notes:
         # we measured the actual gustiness by measuring the variance of the
         # wind speed and empirically derived the the scaling. It's empirical
@@ -528,12 +509,12 @@ def coare36vn_zrf_et_wa(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd,
         # for the flux. The models do u v w, and then compute vector avg to get
         # speed, so we've done the same thing. coare alg input is the magnitude
         # of the mean vector wind relative to water.
-        if np.size(zi) == 1:
-            gust[k] = Beta * (np.multiply(Bf[k],zi)) ** 0.333
-            del k
-        else:
-            gust[k] = Beta * (np.multiply(Bf[k],zi[k])) ** 0.333
-            del k
+        # if np.size(zi) == 1:
+        #     gust[k] = Beta * (np.multiply(Bf[k],zi)) ** 0.333
+        #     del k
+        # else:
+        #     gust[k] = Beta * (np.multiply(Bf[k],zi[k])) ** 0.333
+        #     del k
         ut = np.sqrt(du ** 2 + gust ** 2)
         gf = ut / du
         hsb = np.multiply(np.multiply(- rhoa * cpa,usr),tsr)
@@ -892,8 +873,8 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
     gamma2 = gamma * gamma
     
     sinpsi = np.multiply(np.sin(lat),np.sin(sd)) - np.multiply(np.multiply(np.cos(lat),np.cos(sd)),np.cos(h))
-    psi = np.multiply(np.arcsin(sinpsi),180) / np.pi
-    solarmax = np.multiply(SC,sinpsi) / gamma2
+    psi = (np.multiply(np.arcsin(sinpsi),180) / np.pi)
+    solarmax = (np.multiply(SC,sinpsi) / gamma2) 
     #solarmax=1380*sinpsi*(0.61+0.20*sinpsi);
     
     T = np.minimum(2,sw_dn / solarmax)
@@ -948,53 +929,3 @@ def albedo_vector(sw_dn = None,jd = None,lon = None,lat = None,eorw = None):
     return alb,T,solarmax,psi
 
 #------------------------------------------------------------------------------
-
-# This code executes if 'run coare36vn_zrf_et.py' is executed from iPython cmd line
-# Edit line 960 to indicate path to test data file
-if __name__ == '__main__':
-    # import numpy as np
-    # import os
-    # import util
-    # import matplotlib.pyplot as plt
-    
-    path = '/Users/ludo/Documents/Work/COARE/conversion2python_tests/'
-    fil = 'test_36_data.txt'   
-    data = np.genfromtxt(path+fil, skip_header=1)
-    u = data[:,1]
-    t = data[:,3]
-    rh = data[:,5]
-    P = data[:,7]
-    ts = data[:,8]
-    sw_dn = data[:,9]
-    lw_dn = data[:,10]
-    lat = data[:,11]
-    lon = data[:,12]
-    zi = data[:,13]
-    rain = data[:,14]
-    zu= data[:,2]
-    zt= data[:,4]
-    zq= data[:,6]
-    zrf_u=10.0;
-    zrf_t=10.0;
-    zrf_q=10.0;
-    Ss = data[:,15]
-    jd = data[:,0]
-    cp = data[:,16]
-    sigH = data[:,17]
-    
-    A=coare36vn_zrf_et_wa(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, cp , sigH, zrf_u, zrf_t, zrf_q)
-    fnameA = os.path.join(path,'test_36_output_py_082022_withwavesinput.txt')
-    # A=coare36vn_zrf_et(u, zu , t, zt, rh, zq, P, ts, sw_dn, lw_dn, lat, lon,jd, zi,rain, Ss, None , None, zrf_u, zrf_t, zrf_q)
-    # fnameA = os.path.join(path,'test_36_output_py_082022_withnowavesinput.txt')
-    A_hdr = 'usr\ttau\thsb\thlb\thbb\thlwebb\ttsr\tqsr\tzo\tzot\tzoq\tCd\t'
-    A_hdr += 'Ch\tCe\tL\tzeta\tdT_skinx\tdq_skinx\tdz_skin\tUrf\tTrf\tQrf\t'
-    A_hdr += 'RHrf\tUrfN\tTrfN\tQrfN\tlw_net\tsw_net\tLe\trhoa\tUN\tU10\tU10N\t'
-    A_hdr += 'Cdn_10\tChn_10\tCen_10\thrain\tQs\tEvap\tT10\tT10N\tQ10\tQ10N\tRH10\t'
-    A_hdr += 'P10\trhoa10\tgust\twc_frac\tEdis'
-    np.savetxt(fnameA,A,fmt='%.18e',delimiter='\t',header=A_hdr)
-    
-   # test on signle value
-   # A=coare36vn_zrf_et(u[0], zu[0], t[0], zt[0], rh[0], zq[0], P[0], ts[0], sw_dn[0], lw_dn[0], lat[0], lon[0],jd[0], zi[0],rain[0], Ss[0], cp[0] , sigH[0], zrf_u, zrf_t, zrf_q)
-
-
-    
