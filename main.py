@@ -111,7 +111,6 @@ class SnappingCursorScat:
         else:
             self.set_cross_hair_visible(True)
             x, y = event.xdata, event.ydata
-            # if x is not None and y is not None:
             distances = np.sqrt(np.sum((self.offsets - np.array([x, y]))**2, axis=1))
             index = np.argmin(distances)
             x, y = self.offsets[index]
@@ -335,5 +334,8 @@ snap_cursor_scat = SnappingCursorScat(ax05, point_collection)
 fig05.canvas.mpl_connect('motion_notify_event', snap_cursor_scat.on_mouse_move)
 
 reg = LinearRegression().fit(X, Y)  # fit a linear model
+Y_pred = reg.predict(X)
+ax05.plot(X, Y_pred, color='red')
+ax05.text(0, 10, f'$R^2$ = {reg.score(X, Y):.3f}')
 print('coefficitent: ', reg.coef_)
 print('intercept: ', reg.intercept_)
