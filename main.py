@@ -31,6 +31,32 @@ class Saildrone:
         print(self.data)
         print("\nData variables: ", self.data.data_vars)
 
+    def hourly_binned_mean(self):
+        start_date = self.data.time.values[0]  # first timestamp
+        end_date = self.data.time.values[-1]  # last timestamp
+
+        # Return a fixed frequency datetime index
+        self.center_time = xa.date_range(start_date, end_date, freq="1 H")
+
+        # edges of averaging bins
+        # bins straddle center_time
+        bin_edge = (self.center_time - pd.Timedelta(30, "minutes"))
+
+        # manually add in rightmost bin edge
+        bin_edge = bin_edge.insert(len(bin_edge), bin_edge[-1]
+                                   + pd.Timedelta(60, "minutes"))
+
+        # splits data into bins
+        # computes the mean of each bin
+        # groups are combined back into a single data object
+        self.mean60min = self.data.groupby_bins(self.data.time,
+                                                bin_edge).mean()
+
+        self.scalar_60min_mean_wind_speed = self.mean60min.wind_speed.values
+        self.vector_60min_mean_wind_speed = np.sqrt(
+            self.mean60min.UWND_MEAN.values ** 2
+            + self.mean60min.VWND_MEAN.values ** 2)
+
 
 # %%
 class SnappingCursor:
@@ -86,11 +112,12 @@ class SnappingCursorScat:
     object
     """
 
-    def __init__(self, ax, collection):
+    def __init__(self, ax, collection, zvar):
         self.ax = ax
         self.horizontal_line = ax.axhline(color='k', lw=0.8, ls='--')
         self.vertical_line = ax.axvline(color='k', lw=0.8, ls='--')
         self.offsets = collection.get_offsets()
+        self.zvar = zvar
         self._last_index = None
         # text location in data coordinates
         self.text = ax.text(0, 0, '', transform=ax.transData)
@@ -110,15 +137,20 @@ class SnappingCursorScat:
                 self.ax.figure.canvas.draw()
         else:
             self.set_cross_hair_visible(True)
-            x, y = event.xdata, event.ydata
-            distances = np.sqrt(np.sum((self.offsets - np.array([x, y]))**2, axis=1))
+            x, y = event.xdata, event.ydata  # x and y coordinates of cursor
+            distances = np.sqrt(np.sum((self.offsets - np.array([x, y]))**2,
+                                       axis=1))
             index = np.argmin(distances)
+            if index == self._last_index:
+                return  # still on the same data point. Nothing to do.
+            self._last_index = index
             x, y = self.offsets[index]
+            z = self.zvar[index][0]
             # update the line positions
             self.horizontal_line.set_ydata([y])
             self.vertical_line.set_xdata([x])
             self.text.set_position((x, y))
-            self.text.set_text(f'x={x:1.4f}, y={y:1.4f}')
+            self.text.set_text(f'x={x:1.4f}, y={y:1.4f}, z={z:1.4f}')
             self.ax.figure.canvas.draw()
 
 
@@ -129,33 +161,65 @@ FILE = "sd1069_2019_c297_1b1e_6c16.nc"
 SD = Saildrone("1069", ROOT + FILE)
 
 # binned hourly means
-start_date = SD.data.time.values[0]
-end_date = SD.data.time.values[-1]
-center_time = xa.date_range(start_date, end_date, freq="1 H")
-bin_edge = (center_time - pd.Timedelta(30, "minutes"))
-bin_edge = bin_edge.insert(len(bin_edge), bin_edge[-1]
-                           + pd.Timedelta(60, "minutes"))
-mean60min = SD.data.groupby_bins(SD.data.time, bin_edge).mean()
+SD.hourly_binned_mean()
+
+# %%
+# visualize and verify binning algorithm
+# time bin left edges
+left = []
+bins = SD.mean60min.time_bins.values
+for t in range(len(bins)):
+    left.append(bins[t].left)
+np.asarray(left)
+
+fig00, ax00 = plt.subplots()
+n = 10  # number of samples to plot
+ymin = 0
+ymax = 60
+ax00.vlines(date2num(left[0:n]),
+            ymin=ymin,
+            ymax=ymax)
+ax00.vlines(date2num(SD.center_time[0:n]),
+            ymin=-ymin,
+            ymax=ymax,
+            linestyle='--',
+            color='black')
+ax00.plot(date2num(SD.data.time)[0:n*60],  # raw data
+          SD.data.TEMP_AIR_MEAN[0:n*60],
+          marker='^',
+          markerfacecolor='red',
+          markeredgecolor='red',
+          markersize=2.5,
+          color='red')
+ax00.plot(date2num(SD.center_time)[0:n],  # 60 min mean
+          SD.mean60min.TEMP_AIR_MEAN[0:n],
+          marker='^',
+          markerfacecolor='purple',
+          markeredgecolor='purple',
+          markersize=5,
+          color='purple')
+ax00.xaxis.set_major_locator(HourLocator())
+ax00.xaxis.set_major_formatter(DateFormatter('%H:%M'))
 
 # %%
 # run COARE with no gustiness parameter
 coare_out = coare_no_ug_param(
-    u=mean60min.wind_speed.values,  # scalar mean wind
+    u=SD.scalar_60min_mean_wind_speed,  # scalar mean wind speed
     zu=5.2,
-    t=mean60min.TEMP_AIR_MEAN.values,
+    t=SD.mean60min.TEMP_AIR_MEAN.values,
     zt=2.3,
-    rh=mean60min.RH_MEAN.values,
+    rh=SD.mean60min.RH_MEAN.values,
     zq=2.3,
-    P=np.nan_to_num(mean60min.BARO_PRES_MEAN.values, nan=1015),
-    ts=mean60min.TEMP_SBE37_MEAN.values,
-    sw_dn=mean60min.SW_IRRAD_TOTAL_MEAN.values,
-    lw_dn=mean60min.LW_IRRAD_MEAN.values,
-    lat=mean60min.latitude.values,
-    lon=mean60min.longitude.values,
-    jd=center_time.to_julian_date().to_numpy(),
+    P=np.nan_to_num(SD.mean60min.BARO_PRES_MEAN.values, nan=1015),  # fill nans
+    ts=SD.mean60min.TEMP_SBE37_MEAN.values,
+    sw_dn=SD.mean60min.SW_IRRAD_TOTAL_MEAN.values,
+    lw_dn=SD.mean60min.LW_IRRAD_MEAN.values,
+    lat=SD.mean60min.latitude.values,
+    lon=SD.mean60min.longitude.values,
+    jd=SD.center_time.to_julian_date().to_numpy(),
     zi=600.0,
-    rain=np.full(len(center_time), np.nan),  # nan array for rain
-    Ss=mean60min.SAL_SBE37_MEAN.values)
+    rain=np.full(len(SD.center_time), np.nan),  # nan array for rain
+    Ss=SD.mean60min.SAL_SBE37_MEAN.values)
 
 # hsb = sensible heat flux (W/m^2) ... positive for Tair < Tskin
 # hlb = latent heat flux (W/m^2) ... positive for qair < qs
@@ -165,45 +229,51 @@ thflx = sensible + latent  # positive cools the ocean (heats the atmosphere)
 
 # run coare with parameterized gustiness ug
 coare_out_p = coare36vn_zrf_et(
-    u=np.sqrt(mean60min.UWND_MEAN.values**2 + mean60min.VWND_MEAN.values**2),  # vector mean wind
+    u=SD.vector_60min_mean_wind_speed,  # vector mean wind speed
     zu=5.2,
-    t=mean60min.TEMP_AIR_MEAN.values,
+    t=SD.mean60min.TEMP_AIR_MEAN.values,
     zt=2.3,
-    rh=mean60min.RH_MEAN.values,
+    rh=SD.mean60min.RH_MEAN.values,
     zq=2.3,
-    P=np.nan_to_num(mean60min.BARO_PRES_MEAN.values, nan=1015),
-    ts=mean60min.TEMP_SBE37_MEAN.values,
-    sw_dn=mean60min.SW_IRRAD_TOTAL_MEAN.values,
-    lw_dn=mean60min.LW_IRRAD_MEAN.values,
-    lat=mean60min.latitude.values,
-    lon=mean60min.longitude.values,
-    jd=center_time.to_julian_date().to_numpy(),
+    P=np.nan_to_num(SD.mean60min.BARO_PRES_MEAN.values, nan=1015),  # fill nans
+    ts=SD.mean60min.TEMP_SBE37_MEAN.values,
+    sw_dn=SD.mean60min.SW_IRRAD_TOTAL_MEAN.values,
+    lw_dn=SD.mean60min.LW_IRRAD_MEAN.values,
+    lat=SD.mean60min.latitude.values,
+    lon=SD.mean60min.longitude.values,
+    jd=SD.center_time.to_julian_date().to_numpy(),
     zi=600.0,
-    rain=np.full(len(center_time), np.nan),
-    Ss=mean60min.SAL_SBE37_MEAN.values)
+    rain=np.full(len(SD.center_time), np.nan),  # nan array for rain
+    Ss=SD.mean60min.SAL_SBE37_MEAN.values)
 
+# gustiness parameter from COARE
 ug = coare_out_p[:, 47]
-SD_missing_wind_var = mean60min.wind_speed.values**2 - (mean60min.UWND_MEAN.values**2 + mean60min.VWND_MEAN.values**2)
+SD_missing_wind_var = (SD.scalar_60min_mean_wind_speed ** 2 -
+                       SD.vector_60min_mean_wind_speed ** 2)
 
 # hsb = sensible heat flux (W/m^2) ... positive for Tair < Tskin
 # hlb = latent heat flux (W/m^2) ... positive for qair < qs
 sensible_p = coare_out_p[:, 2]
 latent_p = coare_out_p[:, 3]
-thflx_p = sensible_p + latent_p  # positive cools the ocean (heats the atmosphere)
+thflx_p = sensible_p + latent_p  # positive cools the ocean
 
 # %%
 # measured missing wind variance and ug^2
 fig01, ax01 = plt.subplots()
 
 # missing wind variance colored by SST
-sc01 = ax01.scatter(date2num(center_time),
+sc01 = ax01.scatter(date2num(SD.center_time),
                     SD_missing_wind_var,
-                    c=mean60min.TEMP_SBE37_MEAN.values,
+                    c=SD.mean60min.TEMP_SBE37_MEAN.values,
+                    s=1,
+                    cmap='bwr',
                     linewidth=0.7,
-                    label=r"$\langle U^{2} + V^{2} \rangle - (\langle U \rangle^2 + \langle V \rangle^2) \: \langle\rangle_{60 \, min}$")
+                    label=r"$\langle U^{2} + V^{2} \rangle"
+                    r"- (\langle U \rangle^2 + \langle V \rangle^2)"
+                    r"\: \langle\rangle_{60 \, min}$")  # raw string
 
 # ug^2
-ax01.plot(date2num(center_time),
+ax01.plot(date2num(SD.center_time),
           ug**2,
           color="black",
           linewidth=0.7,
@@ -223,29 +293,31 @@ ax01.set_title('Measured Missing Wind Variance & $Ug^2$')
 fig02, ax02 = plt.subplots(3, sharex=True, constrained_layout=True)
 
 # [TOP] missing wind variance
-sc02 = ax02[0].scatter(date2num(center_time),
+sc02 = ax02[0].scatter(date2num(SD.center_time),
                        SD_missing_wind_var,
                        s=22,
                        color='blueviolet',
-                       label=r"$\langle U^{2} + V^{2} \rangle - (\langle U \rangle^2 + \langle V \rangle^2) \: \langle\rangle_{60 \, min}$")
+                       label=r"$\langle U^{2} + V^{2} \rangle"
+                       r"- (\langle U \rangle^2 + \langle V \rangle^2)"
+                       r"\: \langle\rangle_{60 \, min}$")  # raw string
 # [TOP] ug^2
-ax02[0].plot(date2num(center_time),
+ax02[0].plot(date2num(SD.center_time),
              ug**2,
              label="$Ug^2$ from COARE",
              color="black",
              linewidth=0.7)
 # [MIDDLE] thflx with scalar mean wind
-ax02[1].plot(date2num(center_time),
+ax02[1].plot(date2num(SD.center_time),
              thflx,
              label="THFLX w/ Scalar Mean Wind",
              color='red')
 # [MIDDLE] thflx with vector mean wind and parameterized gustiness
-ax02[1].plot(date2num(center_time),
+ax02[1].plot(date2num(SD.center_time),
              thflx_p,
              label="THFLX w/ Vector Mean Wind & Ug",
              color='black')
 # [BOTTOM]
-ax02[2].scatter(date2num(center_time),
+ax02[2].scatter(date2num(SD.center_time),
                 (thflx_p * 100) / thflx,
                 s=22,
                 label="THFLX_Ug / THFLX",
@@ -281,7 +353,7 @@ sc03 = ax03.scatter(SD.data.longitude,
                     SD.data.latitude,
                     c=SD.data.TEMP_SBE37_MEAN,
                     s=10,
-                    cmap='inferno',
+                    cmap='bwr',
                     label="Saildrone track")
 
 # properties
@@ -298,44 +370,43 @@ ax03.set_extent([-162, -135, -4.5, 25.5])
 fig03.colorbar(sc03, label='SST (degC)')
 ax03.legend()
 
-
 # %%
-def onpick(event):
-    ind = event.ind
-    print('onpick scatter:', ind, x[ind], SD_missing_wind_var[ind])
-
-
-fig04, ax04 = plt.subplots()
-x = ug / 1.25
-ax04.scatter(x, SD_missing_wind_var, picker=True)
-fig04.canvas.mpl_connect('pick_event', onpick)
-
-# %%
-# empirical beta
+# find empirical beta
+# wstar is the convective velocity
+# gustiness is beta * wstar
 fig05, ax05 = plt.subplots()
 
 # preprocessing
-# this should be improved (nans not necessarily in same place)
-x = ug / 1.25
-X = x[~np.isnan(x)]
-Y = SD_missing_wind_var[~np.isnan(SD_missing_wind_var)]
-# remove default gustiness
-not_default = X != 0.16
-X = X[not_default].reshape(-1, 1)
-Y = Y[not_default].reshape(-1, 1)
+default_ug = 0.2
+beta = 1.2
+wstar = ug / beta
+arr = np.stack((wstar,
+                SD_missing_wind_var,
+                SD.mean60min.TEMP_SBE37_MEAN),
+               axis=1)
+arr_no_nan = arr[~np.isnan(arr).any(axis=1)]  # remove any rows with nans
+not_default = arr_no_nan[:, 0] != (default_ug / beta)
+arr_no_default = arr_no_nan[not_default, :]
+X = arr_no_default[:, 0].reshape(-1, 1)  # wstar
+Y = arr_no_default[:, 1].reshape(-1, 1)  # SD missing wind variance
+Z = arr_no_default[:, 2].reshape(-1, 1)
 
 # properties
-ax05.set_xlabel('ug / 1.25')
-ax05.set_ylabel('SD_missing_wind_var')
+ax05.set_xlabel('wstar = ug / beta')
+ax05.set_ylabel(r"$\langle U^{2} + V^{2} \rangle"
+                r"- (\langle U \rangle^2 + \langle V \rangle^2)"
+                r"\: \langle\rangle_{60 \, min}$")  # raw string
 
 # interactive
-point_collection = ax05.scatter(X, Y, s=1, c='black')
-snap_cursor_scat = SnappingCursorScat(ax05, point_collection)
+point_collection = ax05.scatter(X, Y, s=1, c=Z, cmap='bwr')
+snap_cursor_scat = SnappingCursorScat(ax05, point_collection, Z)
 fig05.canvas.mpl_connect('motion_notify_event', snap_cursor_scat.on_mouse_move)
+fig05.colorbar(point_collection, label='SST (degC)')
 
 reg = LinearRegression().fit(X, Y)  # fit a linear model
 Y_pred = reg.predict(X)
-ax05.plot(X, Y_pred, color='red')
+ax05.plot(X, Y_pred, color='black')
 ax05.text(0, 10, f'$R^2$ = {reg.score(X, Y):.3f}')
-print('coefficitent: ', reg.coef_)
-print('intercept: ', reg.intercept_)
+ax05.text(0, 9.4, f'coef = {reg.coef_[0][0]:.3f}')
+print('coefficitent: ', reg.coef_[0][0])
+print('intercept: ', reg.intercept_[0])
