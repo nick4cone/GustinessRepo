@@ -410,3 +410,36 @@ ax05.text(0, 10, f'$R^2$ = {reg.score(X, Y):.3f}')
 ax05.text(0, 9.4, f'coef = {reg.coef_[0][0]:.3f}')
 print('coefficitent: ', reg.coef_[0][0])
 print('intercept: ', reg.intercept_[0])
+
+# %%
+# investigate correlation between measured gustiness and gustiness parameter
+discrepancy = SD_missing_wind_var - ug ** 2
+
+X_vars = np.array([[SD.mean60min.TEMP_AIR_MEAN, 'Air T'],
+                   [SD.mean60min.TEMP_AIR_MEAN - SD.mean60min.TEMP_SBE37_MEAN,
+                    r'$Air\:T - SST$'],
+                   [SD.mean60min.TEMP_SBE37_MEAN, 'SST'],
+                   [SD.vector_60min_mean_wind_speed, 'Wind Speed'],
+                   [SD.mean60min.BARO_PRES_MEAN, 'P']], dtype='object')
+fig06, ax06 = plt.subplots(len(X_vars), sharey=True)
+ax06[2].set_ylabel(r"$SD\:missing\:wind\:variance - ug^2$")
+fig06.tight_layout(h_pad=0.2)
+
+for i, Xvar in enumerate(X_vars):
+    arr00 = np.stack((Xvar[0], discrepancy), axis=1)
+
+    # remove any rows with nans
+    arr00_no_nan = arr00[~np.isnan(arr00).any(axis=1)]
+    X00 = arr00_no_nan[:, 0].reshape(-1, 1)
+    Y00 = arr00_no_nan[:, 1].reshape(-1, 1)  # discrepancy
+    sc06_0 = ax06[i].scatter(X00,
+                             Y00,
+                             s=1,
+                             color='black',
+                             label=Xvar[1])
+    reg00 = LinearRegression().fit(X00, Y00)
+    Y_pred_00 = reg00.predict(X00)
+    ax06[i].plot(X00, Y_pred_00, color='red')
+    ax06[i].text(min(X00),
+                 0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
+    ax06[i].legend(loc='upper right', fontsize='small')
