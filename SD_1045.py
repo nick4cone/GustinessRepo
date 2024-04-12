@@ -13,6 +13,7 @@ from matplotlib.dates import date2num, DateFormatter, HourLocator, MonthLocator
 from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
 from sklearn.linear_model import LinearRegression
+from scipy.optimize import curve_fit
 
 
 # %%
@@ -213,15 +214,16 @@ ax01.set_title('Measured Missing Wind Variance & $Ug^2$')
 # investigate correlation between measured gustiness and gustiness parameter
 discrepancy = SD1045_missing_wind_var - ug ** 2
 
-X_vars = np.array([[SD1045.mean60min.TEMP_AIR_MEAN, 'Air T'],
-                   [SD1045.mean60min.TEMP_AIR_MEAN -
-                    SD1045.mean60min.TEMP_SBE37_MEAN, r'$Air\:T - SST$'],
-                   [SD1045.mean60min.TEMP_SBE37_MEAN, 'SST'],
-                   [SD1045.vector_60min_mean_wind_spd, 'Wind Speed'],
-                   [SD1045.mean60min.BARO_PRES_MEAN, 'P']], dtype='object')
+X_vars = np.array([
+    [SD1045.mean60min.TEMP_AIR_MEAN, r'Air T [$\degree C$]'],
+    [SD1045.mean60min.TEMP_AIR_MEAN - SD1045.mean60min.TEMP_SBE37_MEAN,
+     r'$Air\:T - SST$ [$\degree C$]'],
+    [SD1045.mean60min.TEMP_SBE37_MEAN, r'SST [$\degree C$]'],
+    [SD1045.vector_60min_mean_wind_spd, 'Wind Speed [$m / s$]'],
+    [SD1045.mean60min.BARO_PRES_MEAN, 'P [$hPa$]']], dtype='object')
 fig06, ax06 = plt.subplots(len(X_vars), sharey=True)
-ax06[2].set_ylabel(r"$SD1045\:missing\:wind\:variance - ug^2$")
-fig06.tight_layout(h_pad=0.2)
+ax06[2].set_ylabel(r"$SD Measured\:Wind\:Variance - ug^2$")
+fig06.tight_layout(h_pad=1.5)
 
 for i, Xvar in enumerate(X_vars):
     arr00 = np.stack((Xvar[0], discrepancy), axis=1)
@@ -240,4 +242,4 @@ for i, Xvar in enumerate(X_vars):
     ax06[i].plot(X00, Y_pred_00, color='red')
     ax06[i].text(min(X00),
                  0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
-    ax06[i].legend(loc='upper right', fontsize='small')
+    ax06[i].set_xlabel(Xvar[1], fontsize='small')

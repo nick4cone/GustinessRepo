@@ -443,3 +443,8 @@ for i, Xvar in enumerate(X_vars):
     ax06[i].text(min(X00),
                  0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
     ax06[i].legend(loc='upper right', fontsize='small')
+
+# %%
+usr = coare_out_p[:, 0]  # friction velocity that includes gustiness [m/s]
+fig07, ax07 = plt.subplots()
+ax07.scatter(SD.vector_60min_mean_wind_speed, usr, s=1, color='black')
