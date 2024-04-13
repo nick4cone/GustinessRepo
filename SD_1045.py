@@ -9,11 +9,11 @@ import xarray as xa
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.dates import date2num, DateFormatter, HourLocator, MonthLocator
+from matplotlib.dates import date2num, DateFormatter
+from matplotlib.dates import HourLocator, MonthLocator, DayLocator
 from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
 from sklearn.linear_model import LinearRegression
-from scipy.optimize import curve_fit
 
 
 # %%
@@ -49,8 +49,10 @@ class SaildroneHurr:
                                                             * md2)
         relu = u - ucurr
         relv = v - vcurr
+        rel_1min = np.sqrt(relu ** 2 + relv ** 2)
         self.data = self.data.assign(RELU=relu)
         self.data = self.data.assign(RELV=relv)
+        self.data = self.data.assign(REL_1MIN=rel_1min)
 
         start_date = self.data.time.values[0]  # first timestamp
         end_date = self.data.time.values[-1]  # last timestamp
@@ -127,7 +129,7 @@ ax00.xaxis.set_major_formatter(DateFormatter('%H:%M'))
 # %%
 # run COARE with no gustiness parameter
 coare_out = coare_no_ug_param(
-    u=SD1045.scalar_60min_mean_wind_spd,  # scalar mean wind speed
+    u=SD1045.mean60min.REL_1MIN.values,  # scalar mean wind speed
     zu=5.2,
     t=SD1045.mean60min.TEMP_AIR_MEAN.values,
     zt=2.3,
@@ -150,9 +152,13 @@ sensible = coare_out[:, 2]
 latent = coare_out[:, 3]
 thflx = sensible + latent  # positive cools the ocean (heats the atmosphere)
 
+# 60 minute mean ocean-relative wind speed
+vector_ocean_rel_60min_wind = np.sqrt(SD1045.mean60min.RELU.values ** 2 +
+                                      SD1045.mean60min.RELV.values ** 2)
+
 # run coare with parameterized gustiness ug
 coare_out_p = coare36vn_zrf_et(
-    u=SD1045.vector_60min_mean_wind_spd,  # vector mean wind speed
+    u=vector_ocean_rel_60min_wind,
     zu=5.2,
     t=SD1045.mean60min.TEMP_AIR_MEAN.values,
     zt=2.3,
@@ -174,6 +180,9 @@ ug = coare_out_p[:, 47]
 SD1045_missing_wind_var = (SD1045.scalar_60min_mean_wind_spd ** 2 -
                            SD1045.vector_60min_mean_wind_spd ** 2)
 
+SD1045_missing_wind_var_rel = (SD1045.mean60min.REL_1MIN ** 2 -
+                               vector_ocean_rel_60min_wind ** 2)
+
 # hsb = sensible heat flux (W/m^2) ... positive for Tair < Tskin
 # hlb = latent heat flux (W/m^2) ... positive for qair < qs
 sensible_p = coare_out_p[:, 2]
@@ -186,12 +195,12 @@ fig01, ax01 = plt.subplots()
 
 # missing wind variance colored by SST
 sc01 = ax01.scatter(date2num(SD1045.center_time),
-                    SD1045_missing_wind_var,
+                    SD1045_missing_wind_var_rel,
                     c=SD1045.mean60min.TEMP_SBE37_MEAN.values,
-                    s=1,
-                    cmap='bwr',
+                    s=3.5,
+                    cmap='RdBu_r',
                     linewidth=0.7,
-                    label=r"$\langle U^{2} + V^{2} \rangle"
+                    label=r"Measured Gustiness: $\langle U^{2} + V^{2} \rangle"
                     r"- (\langle U \rangle^2 + \langle V \rangle^2)"
                     r"\: \langle\rangle_{60 \, min}$")  # raw string
 
@@ -200,7 +209,7 @@ ax01.plot(date2num(SD1045.center_time),
           ug**2,
           color="black",
           linewidth=0.7,
-          label="$Ug^2$ from COARE")
+          label="Parameterized Gustiness ($Ug^2$ from COARE)")
 
 # properties
 ax01.xaxis.set_major_locator(MonthLocator())
@@ -208,11 +217,14 @@ ax01.xaxis.set_major_formatter(DateFormatter('%b'))
 fig01.colorbar(sc01, label='SST (degC)')
 ax01.set_ylabel("$m^2 / s^2$")
 ax01.legend(loc='upper left', fontsize='small')
-ax01.set_title('Measured Missing Wind Variance & $Ug^2$')
+ax01.set_title('Measured & Parameterized Wind Gustiness')
+plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+            'GoogleDrive-nforcone@umich.edu/My Drive/'
+            'Gustiness Paper/Figures/fig03.png', dpi=350)
 
 # %%
 # investigate correlation between measured gustiness and gustiness parameter
-discrepancy = SD1045_missing_wind_var - ug ** 2
+discrepancy = SD1045_missing_wind_var_rel - ug ** 2
 
 X_vars = np.array([
     [SD1045.mean60min.TEMP_AIR_MEAN, r'Air T [$\degree C$]'],
@@ -243,3 +255,57 @@ for i, Xvar in enumerate(X_vars):
     ax06[i].text(min(X00),
                  0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
     ax06[i].set_xlabel(Xvar[1], fontsize='small')
+
+# %%
+# measured missing wind variance and ug^2
+# turbulent heat flux comparison
+fig02, ax02 = plt.subplots(3, sharex=True, constrained_layout=True)
+
+# [TOP] missing wind variance
+sc02 = ax02[0].scatter(date2num(SD1045.center_time),
+                       SD1045_missing_wind_var,
+                       s=22,
+                       color='blueviolet',
+                       label=r"$\langle U^{2} + V^{2} \rangle"
+                       r"- (\langle U \rangle^2 + \langle V \rangle^2)"
+                       r"\: \langle\rangle_{60 \, min}$")  # raw string
+# [TOP] ug^2
+ax02[0].plot(date2num(SD1045.center_time),
+             ug**2,
+             label="$Ug^2$ from COARE",
+             color="black",
+             linewidth=0.7)
+# [MIDDLE] thflx with scalar mean wind
+ax02[1].plot(date2num(SD1045.center_time),
+             thflx,
+             label="THFLX w/ Scalar Mean Wind",
+             color='red')
+# [MIDDLE] thflx with vector mean wind and parameterized gustiness
+ax02[1].plot(date2num(SD1045.center_time),
+             thflx_p,
+             label="THFLX w/ Vector Mean Wind & Ug",
+             color='black')
+# [BOTTOM]
+ax02[2].scatter(date2num(SD1045.center_time),
+                (thflx_p * 100) / thflx,
+                s=22,
+                label="THFLX_Ug / THFLX",
+                color='black')
+
+# trim range
+begin_plot = np.datetime64('2021-09-29 00:00:00')
+end_plot = np.datetime64('2021-10-02 00:00:00')
+
+# properties
+ax02[0].set_xlim(begin_plot, end_plot)
+ax02[0].xaxis.set_major_locator(DayLocator())
+ax02[0].xaxis.set_minor_locator(HourLocator())
+ax02[0].xaxis.set_major_formatter(DateFormatter('%b %d'))
+ax02[0].set_ylabel("$m^2 / s^2$")
+ax02[1].set_ylabel("$W / m^2$")
+ax02[2].set_ylabel("%")
+ax02[0].legend(fontsize='x-small')
+ax02[1].legend(fontsize='x-small')
+ax02[0].set_title('Measured Missing Wind Variance & $Ug^2$')
+ax02[1].set_title('Turbulent Heat Flux Comparison')
+ax02[2].set_title('THFLX_Ug / THFLX')

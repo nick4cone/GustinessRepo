@@ -278,10 +278,10 @@ fig02, ax02 = plt.subplots()
 sc02 = ax02.scatter(date2num(SD.center_time),
                     SD_missing_wind_var,
                     c=SD.mean60min.TEMP_SBE37_MEAN.values,
-                    s=1,
-                    cmap='bwr',
+                    s=1.25,
+                    cmap='coolwarm',
                     linewidth=0.7,
-                    label=r"$\langle U^{2} + V^{2} \rangle"
+                    label=r"Measured Gustiness: $\langle U^{2} + V^{2} \rangle"
                     r"- (\langle U \rangle^2 + \langle V \rangle^2)"
                     r"\: \langle\rangle_{60 \, min}$")  # raw string
 
@@ -290,7 +290,7 @@ ax02.plot(date2num(SD.center_time),
           ug**2,
           color="black",
           linewidth=0.7,
-          label="$Ug^2$ from COARE")
+          label="Parameterized Gustiness ($Ug^2$ from COARE)")
 
 # properties
 ax02.xaxis.set_major_locator(MonthLocator())
@@ -298,4 +298,4 @@ ax02.xaxis.set_major_formatter(DateFormatter('%b'))
 fig02.colorbar(sc02, label='SST (degC)')
 ax02.set_ylabel("$m^2 / s^2$")
 ax02.legend(loc='upper left', fontsize='small')
-ax02.set_title('Measured Missing Wind Variance & $Ug^2$')
+ax02.set_title('Measured & Parameterized Wind Gustiness')
