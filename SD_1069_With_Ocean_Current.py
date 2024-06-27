@@ -98,7 +98,7 @@ class SaildroneADCP:
 
 
 # %%
-ROOT = "/Users/nicholasforcone/GustinessData/"
+ROOT = "/Users/nicholasforcone/Library/Mobile Documents/com~apple~CloudDocs/GustinessData/"
 FILE = "sd1069_2019_c297_1b1e_6c16.nc"
 FILE_ADCP = "SD1069adcp2019.cdf"
 SD = SaildroneADCP("1069", ROOT + FILE, ROOT + FILE_ADCP)
