@@ -14,6 +14,7 @@ from matplotlib.dates import HourLocator, MonthLocator, DayLocator
 from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
 from sklearn.linear_model import LinearRegression
+from windrose import WindroseAxes
 
 
 # %%
@@ -127,6 +128,16 @@ ax00.xaxis.set_major_locator(HourLocator())
 ax00.xaxis.set_major_formatter(DateFormatter('%H:%M'))
 
 # %%
+Warr = np.stack((SD1045.data.WIND_FROM_MEAN,
+                 SD1045.data.WIND_SPEED_MEAN), axis=1)
+Warr_no_nan = Warr[~np.isnan(Warr).any(axis=1)]  # remove any rows with nans
+
+ax = WindroseAxes.from_ax()
+ax.bar(Warr_no_nan[:, 0], Warr_no_nan[:, 1],
+       normed=True, opening=0.8, edgecolor="white")
+ax.set_legend()
+
+# %%
 # run COARE with no gustiness parameter
 coare_out = coare_no_ug_param(
     u=SD1045.mean60min.REL_1MIN.values,  # scalar mean wind speed
@@ -213,14 +224,16 @@ ax01.plot(date2num(SD1045.center_time),
 
 # properties
 ax01.xaxis.set_major_locator(MonthLocator())
+ax01.xaxis.set_minor_locator(DayLocator(interval=5))
 ax01.xaxis.set_major_formatter(DateFormatter('%b'))
+ax01.xaxis.set_minor_formatter(DateFormatter('%d'))
 fig01.colorbar(sc01, label='SST (degC)')
 ax01.set_ylabel("$m^2 / s^2$")
 ax01.legend(loc='upper left', fontsize='small')
 ax01.set_title('Measured & Parameterized Wind Gustiness')
-plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
-            'GoogleDrive-nforcone@umich.edu/My Drive/'
-            'Gustiness Paper/Figures/fig03.png', dpi=350)
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/fig03.png', dpi=350)
 
 # %%
 # investigate correlation between measured gustiness and gustiness parameter
@@ -234,8 +247,9 @@ X_vars = np.array([
     [SD1045.vector_60min_mean_wind_spd, 'Wind Speed [$m / s$]'],
     [SD1045.mean60min.BARO_PRES_MEAN, 'P [$hPa$]']], dtype='object')
 fig06, ax06 = plt.subplots(len(X_vars), sharey=True)
-ax06[2].set_ylabel(r"$SD Measured\:Wind\:Variance - ug^2$")
+ax06[2].set_ylabel(r"Measured - Parameterized Gustiness")
 fig06.tight_layout(h_pad=1.5)
+ax06[0].set_title("SD 1045")
 
 for i, Xvar in enumerate(X_vars):
     arr00 = np.stack((Xvar[0], discrepancy), axis=1)
@@ -255,6 +269,10 @@ for i, Xvar in enumerate(X_vars):
     ax06[i].text(min(X00),
                  0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
     ax06[i].set_xlabel(Xvar[1], fontsize='small')
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/fig06.png', dpi=350)
 
 # %%
 # measured missing wind variance and ug^2

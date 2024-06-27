@@ -15,6 +15,9 @@ from matplotlib.dates import DayLocator, HourLocator
 from sklearn.linear_model import LinearRegression
 from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
+from scipy.fft import fft, fftfreq
+from windrose import WindroseAxes
+import matplotlib.ticker as mticker
 
 
 # %%
@@ -219,13 +222,15 @@ coare_out = coare_no_ug_param(
     jd=SD.center_time.to_julian_date().to_numpy(),
     zi=600.0,
     rain=np.full(len(SD.center_time), np.nan),  # nan array for rain
-    Ss=SD.mean60min.SAL_SBE37_MEAN.values)
+    Ss=SD.mean60min.SAL_SBE37_MEAN.values,
+    sigH=SD.mean60min.WAVE_SIGNIFICANT_HEIGHT.values)
 
 # hsb = sensible heat flux (W/m^2) ... positive for Tair < Tskin
 # hlb = latent heat flux (W/m^2) ... positive for qair < qs
 sensible = coare_out[:, 2]
 latent = coare_out[:, 3]
 thflx = sensible + latent  # positive cools the ocean (heats the atmosphere)
+tau = coare_out[:, 1]  # wind stress
 
 # run coare with parameterized gustiness ug
 coare_out_p = coare36vn_zrf_et(
@@ -244,7 +249,8 @@ coare_out_p = coare36vn_zrf_et(
     jd=SD.center_time.to_julian_date().to_numpy(),
     zi=600.0,
     rain=np.full(len(SD.center_time), np.nan),  # nan array for rain
-    Ss=SD.mean60min.SAL_SBE37_MEAN.values)
+    Ss=SD.mean60min.SAL_SBE37_MEAN.values,
+    sigH=SD.mean60min.WAVE_SIGNIFICANT_HEIGHT.values)
 
 # gustiness parameter from COARE
 ug = coare_out_p[:, 47]
@@ -256,17 +262,23 @@ SD_missing_wind_var = (SD.scalar_60min_mean_wind_speed ** 2 -
 sensible_p = coare_out_p[:, 2]
 latent_p = coare_out_p[:, 3]
 thflx_p = sensible_p + latent_p  # positive cools the ocean
+tau_p = coare_out_p[:, 1]
 
 # %%
+# csfont = {'fontname': 'Times New Roman'}
+# plt.rcParams["font.family"] = "Times New Roman"
 # measured missing wind variance and ug^2
 fig01, ax01 = plt.subplots()
+
+wdir = (np.arctan2(SD.mean60min.UWND_MEAN.values,
+        SD.mean60min.VWND_MEAN.values) * 180 / np.pi) + 180
 
 # missing wind variance colored by SST
 sc01 = ax01.scatter(date2num(SD.center_time),
                     SD_missing_wind_var,
-                    c=SD.mean60min.TEMP_SBE37_MEAN.values,
+                    c=wdir,
                     s=1,
-                    cmap='bwr',
+                    cmap='twilight',
                     linewidth=0.7,
                     label=r"$\langle U^{2} + V^{2} \rangle"
                     r"- (\langle U \rangle^2 + \langle V \rangle^2)"
@@ -282,10 +294,32 @@ ax01.plot(date2num(SD.center_time),
 # properties
 ax01.xaxis.set_major_locator(MonthLocator())
 ax01.xaxis.set_major_formatter(DateFormatter('%b'))
-fig01.colorbar(sc01, label='SST (degC)')
+fig01.colorbar(sc01, label='Wind Direction')
 ax01.set_ylabel("$m^2 / s^2$")
 ax01.legend(loc='upper left', fontsize='small')
 ax01.set_title('Measured Missing Wind Variance & $Ug^2$')
+
+# %%
+Warr = np.stack((wdir, SD.vector_60min_mean_wind_speed), axis=1)
+Warr_no_nan = Warr[~np.isnan(Warr).any(axis=1)]  # remove any rows with nans
+
+ax = WindroseAxes.from_ax()
+ax.bar(Warr_no_nan[:, 0], Warr_no_nan[:, 1],
+       opening=0.8, bins=4, edgecolor="white")
+ax.set_legend(units='m/s', title='Mean Wind Vector Magnitude')
+ax.set_title("Saildrone 1069")
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/rose.png', dpi=350)
+
+# Warr = np.stack((SD.data.wind_dir, SD.data.wind_speed), axis=1)
+# Warr_no_nan = Warr[~np.isnan(Warr).any(axis=1)]  # remove any rows with nans
+
+# ax = WindroseAxes.from_ax()
+# ax.bar(Warr_no_nan[:, 0], Warr_no_nan[:, 1],
+#        normed=True, opening=0.8, edgecolor="white")
+# ax.set_legend()
 
 # %%
 # measured missing wind variance and ug^2
@@ -297,6 +331,7 @@ sc02 = ax02[0].scatter(date2num(SD.center_time),
                        SD_missing_wind_var,
                        s=22,
                        color='blueviolet',
+                       # c=SD.mean60min.TEMP_SBE37_MEAN,
                        label=r"$\langle U^{2} + V^{2} \rangle"
                        r"- (\langle U \rangle^2 + \langle V \rangle^2)"
                        r"\: \langle\rangle_{60 \, min}$")  # raw string
@@ -344,6 +379,10 @@ ax02[0].set_ylim(top=10)
 ax02[1].set_ylim(top=200)
 ax02[2].set_ylim(bottom=60, top=110)
 
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/fig05.png', dpi=350)
+
 # %%
 # Saildrone track colored by SST
 fig03 = plt.figure()
@@ -351,14 +390,16 @@ ax03 = plt.axes(projection=ccrs.PlateCarree())
 
 sc03 = ax03.scatter(SD.data.longitude,
                     SD.data.latitude,
-                    c=SD.data.TEMP_SBE37_MEAN,
+                    # c=SD.data.TEMP_SBE37_MEAN,
+                    c=date2num(SD.data.time),
                     s=10,
-                    cmap='bwr',
+                    cmap='RdBu_r',
                     label="Saildrone track")
 
 # properties
 ax03.coastlines()
 ax03.stock_img()
+ax03.set_title('TPOS Saildrone 1069')
 gl = ax03.gridlines(draw_labels=True,
                     linewidth=1.5,
                     color='gray',
@@ -367,8 +408,31 @@ gl = ax03.gridlines(draw_labels=True,
                     zorder=0)
 gl.right_labels = False
 ax03.set_extent([-162, -135, -4.5, 25.5])
-fig03.colorbar(sc03, label='SST (degC)')
-ax03.legend()
+ax03.text(-159, 17, 'Hawai\'i')
+cbar = fig03.colorbar(sc03,
+                      ticks=[date2num(np.datetime64('2019-07-01 00:00:00')),
+                             date2num(np.datetime64('2019-08-01 00:00:00')),
+                             date2num(np.datetime64('2019-09-01 00:00:00')),
+                             date2num(np.datetime64('2019-10-01 00:00:00')),
+                             date2num(np.datetime64('2019-11-01 00:00:00')),
+                             date2num(np.datetime64('2019-12-01 00:00:00'))],
+                      format=mticker.FixedFormatter(['July',
+                                                     'August',
+                                                     'September',
+                                                     'October',
+                                                     'November',
+                                                     'December']),
+                      # label='SST (degC)')
+                      )
+# ax03.legend(facecolor='none')
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/saildrone_track_dates.png', dpi=350)
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/saildrone_1069_track.png', dpi=350)
 
 # %%
 # find empirical beta
@@ -381,35 +445,40 @@ default_ug = 0.2
 beta = 1.2
 wstar = ug / beta
 arr = np.stack((wstar,
-                SD_missing_wind_var,
-                SD.mean60min.TEMP_SBE37_MEAN),
+                np.sqrt(SD_missing_wind_var),
+                SD.scalar_60min_mean_wind_speed),
                axis=1)
 arr_no_nan = arr[~np.isnan(arr).any(axis=1)]  # remove any rows with nans
 not_default = arr_no_nan[:, 0] != (default_ug / beta)
 arr_no_default = arr_no_nan[not_default, :]
+# arr_no_default = arr_no_default[arr_no_default[:, 2] > 5]
 X = arr_no_default[:, 0].reshape(-1, 1)  # wstar
-Y = arr_no_default[:, 1].reshape(-1, 1)  # SD missing wind variance
-Z = arr_no_default[:, 2].reshape(-1, 1)
+Y = arr_no_default[:, 1].reshape(-1, 1)  # (measure gustiness)^(1/2)
+Z = arr_no_default[:, 2].reshape(-1, 1)  # hourly mean wind speed
 
 # properties
-ax05.set_xlabel('wstar = ug / beta')
-ax05.set_ylabel(r"$\langle U^{2} + V^{2} \rangle"
-                r"- (\langle U \rangle^2 + \langle V \rangle^2)"
-                r"\: \langle\rangle_{60 \, min}$")  # raw string
+ax05.set_xlabel('$W_*$')
+ax05.set_ylabel(r'$(scalar\_mean\_wind^2-vector\_mean\_wind^2)^{1/2}$')
+ax05.set_title(r'Empirical $\beta$ from Saildrone 1069')
 
 # interactive
-point_collection = ax05.scatter(X, Y, s=1, c=Z, cmap='bwr')
-snap_cursor_scat = SnappingCursorScat(ax05, point_collection, Z)
-fig05.canvas.mpl_connect('motion_notify_event', snap_cursor_scat.on_mouse_move)
-fig05.colorbar(point_collection, label='SST (degC)')
+point_collection = ax05.scatter(X, Y, s=1, c=Z)
+# snap_cursor_scat = SnappingCursorScat(ax05, point_collection, Z)
+# fig05.canvas.mpl_connect('motion_notify_event',
+#                          snap_cursor_scat.on_mouse_move)
+fig05.colorbar(point_collection, label='Hourly Mean Wind Speed')
 
 reg = LinearRegression().fit(X, Y)  # fit a linear model
 Y_pred = reg.predict(X)
-ax05.plot(X, Y_pred, color='black')
-ax05.text(0, 10, f'$R^2$ = {reg.score(X, Y):.3f}')
-ax05.text(0, 9.4, f'coef = {reg.coef_[0][0]:.3f}')
+ax05.plot(X, Y_pred, color='red')
+ax05.text(0.1, 3.2, f'$R^2$ = {reg.score(X, Y):.3f}')
+ax05.text(0.1, 3, f'coef = {reg.coef_[0][0]:.3f}')
 print('coefficitent: ', reg.coef_[0][0])
 print('intercept: ', reg.intercept_[0])
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/empirical_beta.png', dpi=350)
 
 # %%
 # investigate correlation between measured gustiness and gustiness parameter
@@ -420,6 +489,7 @@ X_vars = np.array([[SD.mean60min.TEMP_AIR_MEAN, 'Air T'],
                     r'$Air\:T - SST$'],
                    [SD.mean60min.TEMP_SBE37_MEAN, 'SST'],
                    [SD.vector_60min_mean_wind_speed, 'Wind Speed'],
+                   [SD.scalar_60min_mean_wind_speed, 'Scalar Wind Speed'],
                    [SD.mean60min.BARO_PRES_MEAN, 'P']], dtype='object')
 fig06, ax06 = plt.subplots(len(X_vars), sharey=True)
 ax06[2].set_ylabel(r"$SD\:missing\:wind\:variance - ug^2$")
@@ -445,6 +515,65 @@ for i, Xvar in enumerate(X_vars):
     ax06[i].legend(loc='upper right', fontsize='small')
 
 # %%
-usr = coare_out_p[:, 0]  # friction velocity that includes gustiness [m/s]
+# edges of averaging bins
+# bins straddle center_time
+bin_edge = (SD.center_time - pd.Timedelta(30, "minutes"))
+
+# manually add in rightmost bin edge
+bin_edge = bin_edge.insert(len(bin_edge), bin_edge[-1]
+                           + pd.Timedelta(60, "minutes"))
+
+
+def Subtract_The_Mean(group):
+    return group - group.mean()
+
+
+df = SD.data.to_dataframe()
+df.index = df.time
+resamp = df.resample('60min')['wind_speed'].apply(Subtract_The_Mean)
+mean_again = (resamp ** 2).resample('60min').mean()
+
+# %%
 fig07, ax07 = plt.subplots()
-ax07.scatter(SD.vector_60min_mean_wind_speed, usr, s=1, color='black')
+csfont = {'fontname': 'Times New Roman'}
+plt.rcParams["font.family"] = "Times New Roman"
+
+ax07.scatter(date2num(SD.data.time),  # 1 minute
+             SD.data.wind_speed,
+             s=0.5,
+             color='red',
+             label='1-Minute Wind Speed')
+ax07.plot(date2num(SD.center_time),  # 60 min mean
+          SD.vector_60min_mean_wind_speed,
+          linewidth=1,
+          color='blue',
+          label='Vector Mean Wind (Hourly)')
+ax07.plot(date2num(SD.center_time),  # 60 min mean
+          SD.scalar_60min_mean_wind_speed,
+          linewidth=1,
+          color='black',
+          label='Scalar Mean Wind (Hourly)')
+
+ax07.xaxis.set_major_locator(MonthLocator())
+ax07.xaxis.set_minor_locator(HourLocator())
+ax07.xaxis.set_major_formatter(DateFormatter('%b %d'))
+ax07.xaxis.set_minor_formatter(DateFormatter('%H'))
+ax07.set_xlim(np.datetime64('2019-11-18 21:00:00'),
+              np.datetime64('2019-11-19 09:00:00'))
+ax07.set_ylim(top=11)
+ax07.legend()
+ax07.set_title("Mean Wind Comparison SD1069", **csfont)
+
+# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
+#             'GoogleDrive-nforcone@umich.edu/My Drive/'
+#             'Gustiness Paper/Figures/fig04.png', dpi=350)
+
+# %%
+timeSlice = resamp['2019-10-20 00:00:00': '2019-12-28 00:00:00']
+interp = timeSlice.interpolate().values
+
+fig08, ax08 = plt.subplots()
+y = fft(mean_again.interpolate().values)
+xf = fftfreq(n=len(mean_again), d=1/60)
+
+ax08.plot(xf, y)
