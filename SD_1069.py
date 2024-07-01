@@ -17,6 +17,7 @@ from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
 from scipy.fft import fft, fftfreq
 from windrose import WindroseAxes
+from datetime import datetime
 import matplotlib.ticker as mticker
 
 
@@ -159,12 +160,13 @@ class SnappingCursorScat:
 
 # %%
 # instantiate Saildrone object
-ROOT = "/Users/nicholasforcone/GustinessData/"
+ROOT = "/Users/nicholasforcone/Library/Mobile Documents/com~apple~CloudDocs/GustinessData/"
 FILE = "sd1069_2019_c297_1b1e_6c16.nc"
 SD = Saildrone("1069", ROOT + FILE)
 
 # binned hourly means
 SD.hourly_binned_mean()
+
 
 # %%
 # visualize and verify binning algorithm
@@ -306,12 +308,14 @@ Warr_no_nan = Warr[~np.isnan(Warr).any(axis=1)]  # remove any rows with nans
 ax = WindroseAxes.from_ax()
 ax.bar(Warr_no_nan[:, 0], Warr_no_nan[:, 1],
        opening=0.8, bins=4, edgecolor="white")
-ax.set_legend(units='m/s', title='Mean Wind Vector Magnitude')
-ax.set_title("Saildrone 1069")
+ax.set_legend(units='m/s', title='Mean Wind Vector Magnitude', loc='upper right',
+              bbox_to_anchor=(1.25, 0.8))
+ax.set_title("TPOS Saildrone 1069", size=25)
+rose_fig = ax.get_figure()
+rose_fig.set_size_inches(9, 7)
 
-# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
-#             'GoogleDrive-nforcone@umich.edu/My Drive/'
-#             'Gustiness Paper/Figures/rose.png', dpi=350)
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/rose_' + 
+#             datetime.now().strftime("%Y_%m_%d"), dpi=350)
 
 # Warr = np.stack((SD.data.wind_dir, SD.data.wind_speed), axis=1)
 # Warr_no_nan = Warr[~np.isnan(Warr).any(axis=1)]  # remove any rows with nans
