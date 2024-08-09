@@ -15,6 +15,7 @@ from matplotlib.dates import DayLocator, HourLocator
 from sklearn.linear_model import LinearRegression
 from COARE.coare36vn_zrf_et import coare36vn_zrf_et  # from email thread
 from COARE.coare_no_ug_param import coare_no_ug_param
+from COARE.coare_new_ug_param import coare_new_ug_param
 from scipy.fft import fft, fftfreq
 from windrose import WindroseAxes
 from datetime import datetime
@@ -254,8 +255,29 @@ coare_out_p = coare36vn_zrf_et(
     Ss=SD.mean60min.SAL_SBE37_MEAN.values,
     sigH=SD.mean60min.WAVE_SIGNIFICANT_HEIGHT.values)
 
+# run coare with NEW parameterized gustiness
+coare_out_p_new = coare_new_ug_param(
+    u=SD.vector_60min_mean_wind_speed,  # vector mean wind speed
+    zu=5.2,
+    t=SD.mean60min.TEMP_AIR_MEAN.values,
+    zt=2.3,
+    rh=SD.mean60min.RH_MEAN.values,
+    zq=2.3,
+    P=np.nan_to_num(SD.mean60min.BARO_PRES_MEAN.values, nan=1015),  # fill nans
+    ts=SD.mean60min.TEMP_SBE37_MEAN.values,
+    sw_dn=SD.mean60min.SW_IRRAD_TOTAL_MEAN.values,
+    lw_dn=SD.mean60min.LW_IRRAD_MEAN.values,
+    lat=SD.mean60min.latitude.values,
+    lon=SD.mean60min.longitude.values,
+    jd=SD.center_time.to_julian_date().to_numpy(),
+    zi=600.0,
+    rain=np.full(len(SD.center_time), np.nan),  # nan array for rain
+    Ss=SD.mean60min.SAL_SBE37_MEAN.values,
+    sigH=SD.mean60min.WAVE_SIGNIFICANT_HEIGHT.values)
+
 # gustiness parameter from COARE
 ug = coare_out_p[:, 47]
+ug_NEW = coare_out_p_new[:, 47]
 SD_missing_wind_var = (SD.scalar_60min_mean_wind_speed ** 2 -
                        SD.vector_60min_mean_wind_speed ** 2)
 
@@ -278,8 +300,8 @@ wdir = (np.arctan2(SD.mean60min.UWND_MEAN.values,
 # missing wind variance colored by SST
 sc01 = ax01.scatter(date2num(SD.center_time),
                     SD_missing_wind_var,
-                    c=wdir,
                     s=1,
+                    c='black',
                     cmap='twilight',
                     linewidth=0.7,
                     label=r"$\langle U^{2} + V^{2} \rangle"
@@ -289,17 +311,46 @@ sc01 = ax01.scatter(date2num(SD.center_time),
 # ug^2
 ax01.plot(date2num(SD.center_time),
           ug**2,
-          color="black",
+          color="orange",
           linewidth=0.7,
           label="$Ug^2$ from COARE")
+
+# NEW ug^2
+ax01.plot(date2num(SD.center_time),
+          ug_NEW**2,
+          color="forestgreen",
+          linewidth=0.7,
+          label="New $Ug^2$ from COARE")
 
 # properties
 ax01.xaxis.set_major_locator(MonthLocator())
 ax01.xaxis.set_major_formatter(DateFormatter('%b'))
-fig01.colorbar(sc01, label='Wind Direction')
+# fig01.colorbar(sc01, label='Wind Direction')
 ax01.set_ylabel("$m^2 / s^2$")
 ax01.legend(loc='upper left', fontsize='small')
 ax01.set_title('Measured Missing Wind Variance & $Ug^2$')
+
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/new_v_old_' + 
+#              datetime.now().strftime("%Y_%m_%d"), dpi=350)
+
+old_diff = np.abs(SD_missing_wind_var - ug)
+old_diff_mean = np.mean(old_diff[~np.isnan(old_diff)])
+
+new_diff = np.abs(SD_missing_wind_var - ug_NEW)
+new_diff_mean = np.mean(new_diff[~np.isnan(new_diff)])
+print("old diff: ", old_diff_mean)
+print("new diff: ", new_diff_mean)
+
+fig09, ax09 = plt.subplots()
+waluigi = np.arange(2, step=0.5)
+ax09.plot(waluigi, waluigi)
+ax09.scatter(ug, ug_NEW, color='black', s=5)
+ax09.set_ylabel("New Param")
+ax09.set_xlabel("Old Param")
+ax09.grid()
+
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/new_v_old_scatter' + 
+#               datetime.now().strftime("%Y_%m_%d"), dpi=350)
 
 # %%
 Warr = np.stack((wdir, SD.vector_60min_mean_wind_speed), axis=1)
@@ -310,7 +361,7 @@ ax.bar(Warr_no_nan[:, 0], Warr_no_nan[:, 1],
        opening=0.8, bins=4, edgecolor="white")
 ax.set_legend(units='m/s', title='Mean Wind Vector Magnitude', loc='upper right',
               bbox_to_anchor=(1.25, 0.8))
-ax.set_title("TPOS Saildrone 1069", size=25)
+ax.set_title("TPOS Saildrone 1069 Wind Rose", size=17)
 rose_fig = ax.get_figure()
 rose_fig.set_size_inches(9, 7)
 
@@ -450,39 +501,67 @@ beta = 1.2
 wstar = ug / beta
 arr = np.stack((wstar,
                 np.sqrt(SD_missing_wind_var),
-                SD.scalar_60min_mean_wind_speed),
+                SD.vector_60min_mean_wind_speed),
                axis=1)
 arr_no_nan = arr[~np.isnan(arr).any(axis=1)]  # remove any rows with nans
 not_default = arr_no_nan[:, 0] != (default_ug / beta)
 arr_no_default = arr_no_nan[not_default, :]
-# arr_no_default = arr_no_default[arr_no_default[:, 2] > 5]
+# arr_no_default = arr_no_default[arr_no_default[:, 2] < 10]  # filtering
 X = arr_no_default[:, 0].reshape(-1, 1)  # wstar
 Y = arr_no_default[:, 1].reshape(-1, 1)  # (measure gustiness)^(1/2)
 Z = arr_no_default[:, 2].reshape(-1, 1)  # hourly mean wind speed
+X_cubed = X ** 3  # wstar^3
+log_Y = np.log(Y, where=Y > 0)  # log(measured gustiness)
+log_X_cubed = np.log(X_cubed)  # log(wstar^3)
 
 # properties
-ax05.set_xlabel('$W_*$')
-ax05.set_ylabel(r'$(scalar\_mean\_wind^2-vector\_mean\_wind^2)^{1/2}$')
-ax05.set_title(r'Empirical $\beta$ from Saildrone 1069')
+ax05.set_xlabel(r'$\log(wstar^3)= \log(\frac{g}{T} \times \overline{w^\prime \theta_v^\prime} \times z_i)$',
+                fontsize=15)
+ax05.set_ylabel(r'$\log(measured\:gustiness)$', fontsize=15)
+ax05.set_title(r'Log Transformation and Linear Regression', fontsize=15)
 
 # interactive
-point_collection = ax05.scatter(X, Y, s=1, c=Z)
+point_collection = ax05.scatter(log_X_cubed, log_Y, s=1, c='black')
 # snap_cursor_scat = SnappingCursorScat(ax05, point_collection, Z)
 # fig05.canvas.mpl_connect('motion_notify_event',
 #                          snap_cursor_scat.on_mouse_move)
-fig05.colorbar(point_collection, label='Hourly Mean Wind Speed')
+# fig05.colorbar(point_collection, label='Hourly Mean Wind Speed')
 
-reg = LinearRegression().fit(X, Y)  # fit a linear model
-Y_pred = reg.predict(X)
-ax05.plot(X, Y_pred, color='red')
-ax05.text(0.1, 3.2, f'$R^2$ = {reg.score(X, Y):.3f}')
-ax05.text(0.1, 3, f'coef = {reg.coef_[0][0]:.3f}')
+
+reg = LinearRegression().fit(log_X_cubed, log_Y)  # fit a linear model
+Y_pred = reg.predict(log_X_cubed)
+ax05.plot(log_X_cubed, Y_pred, color='red')
+ax05.text(-6.75, 0.75, f'$R^2$ = {reg.score(log_X_cubed, log_Y):.3f}', fontsize=13)
+ax05.text(-6.75, 0.5, f'coef = {reg.coef_[0][0]:.3f}', fontsize=13)
+ax05.text(-6.75, 0.25, r'$e^{intercept}$' f'= {np.e ** reg.intercept_[0]:.3f}', fontsize=13)
 print('coefficitent: ', reg.coef_[0][0])
 print('intercept: ', reg.intercept_[0])
+print('Beta = e^intercept: ', np.e ** reg.intercept_[0])
+print('$R^2$: ', reg.score(log_X_cubed, log_Y))
+fig05.tight_layout()
 
-# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
-#             'GoogleDrive-nforcone@umich.edu/My Drive/'
-#             'Gustiness Paper/Figures/empirical_beta.png', dpi=350)
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/log_transform_' + 
+#             datetime.now().strftime("%Y_%m_%d"), dpi=350)
+
+fig10, ax10 = plt.subplots()
+ax10.scatter(SD_missing_wind_var, ug**2, s=1,
+             label='old param $Ug^2$')
+ax10.scatter(SD_missing_wind_var, ug_NEW**2, s=1,
+             label='new param $Ug^2$')
+ax10.set_xlabel('Observed $gustiness^2$')
+ax10.set_ylabel('Parameterized $gustiness^2$')
+one_to_one = np.arange(3)
+ax10.plot(one_to_one, one_to_one, color='black')
+ax10.legend()
+
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/obs_v_param_both' + 
+#             datetime.now().strftime("%Y_%m_%d"), dpi=350)
+
+fig11, ax11 = plt.subplots()
+beta_fix = LinearRegression().fit(X, Y)
+beta_fix_y_pred = beta_fix.predict(X)
+ax11.scatter(X, Y, s=1, c='black')
+ax11.plot(X, beta_fix_y_pred, color='red')
 
 # %%
 # investigate correlation between measured gustiness and gustiness parameter

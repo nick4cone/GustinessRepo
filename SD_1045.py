@@ -82,8 +82,8 @@ class SaildroneHurr:
 
 
 # %%
-ROOT = "/Users/nicholasforcone/GustinessData/"
-FILE = "sd1045_hurricane_2021_4a74_3977_50f0.nc"
+ROOT = "/Users/nicholasforcone/Library/Mobile Documents/com~apple~CloudDocs/GustinessData/"
+FILE = "sd1045_hurricane_2021_afd6_853e_aefe.nc"
 SD1045 = SaildroneHurr("1045", ROOT + FILE)
 
 # binned hourly means
@@ -223,18 +223,14 @@ ax01.plot(date2num(SD1045.center_time),
           label="Parameterized Gustiness ($Ug^2$ from COARE)")
 
 # properties
-ax01.xaxis.set_major_locator(MonthLocator())
-ax01.xaxis.set_minor_locator(DayLocator(interval=5))
-ax01.xaxis.set_major_formatter(DateFormatter('%b'))
-ax01.xaxis.set_minor_formatter(DateFormatter('%d'))
+ax01.xaxis.set_major_locator(DayLocator(interval=5))
+ax01.xaxis.set_major_formatter(DateFormatter('%-m/%d'))
 fig01.colorbar(sc01, label='SST (degC)')
 ax01.set_ylabel("$m^2 / s^2$")
 ax01.legend(loc='upper left', fontsize='small')
 ax01.set_title('Measured & Parameterized Wind Gustiness')
-# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
-#             'GoogleDrive-nforcone@umich.edu/My Drive/'
-#             'Gustiness Paper/Figures/fig03.png', dpi=350)
 
+# plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/sam_gustiness', dpi=350)
 # %%
 # investigate correlation between measured gustiness and gustiness parameter
 discrepancy = SD1045_missing_wind_var_rel - ug ** 2
@@ -270,9 +266,6 @@ for i, Xvar in enumerate(X_vars):
                  0.7 * max(Y00), f'$R^2$ = {reg00.score(X00, Y00):.3f}')
     ax06[i].set_xlabel(Xvar[1], fontsize='small')
 
-# plt.savefig('/Users/nicholasforcone/Library/CloudStorage/'
-#             'GoogleDrive-nforcone@umich.edu/My Drive/'
-#             'Gustiness Paper/Figures/fig06.png', dpi=350)
 
 # %%
 # measured missing wind variance and ug^2
@@ -327,3 +320,93 @@ ax02[1].legend(fontsize='x-small')
 ax02[0].set_title('Measured Missing Wind Variance & $Ug^2$')
 ax02[1].set_title('Turbulent Heat Flux Comparison')
 ax02[2].set_title('THFLX_Ug / THFLX')
+
+# %%
+from goes2go.data import goes_nearesttime
+
+hurrtime = np.datetime64('2021-09-30 15:00:00')
+G = goes_nearesttime(attime=hurrtime,
+                     satellite='goes16',
+                     product='ABI',
+                     domain='M',
+                     download=False)
+# %%
+import cartopy.crs as ccrs
+from cartopy.mpl.ticker import LatitudeLocator, LongitudeLocator, LatitudeFormatter, LongitudeFormatter
+
+# Make figure on Cartopy axes
+truColorAx = plt.subplot(projection=G.rgb.crs )
+truColorAx.imshow(G.rgb.TrueColor(), **G.rgb.imshow_kwargs)
+truColorAx.coastlines()
+
+
+from tropycal import tracks
+
+basin = tracks.TrackDataset('north_atlantic')
+storm = basin.get_storm(('Sam', 2021))
+hurr_df=storm.to_dataframe()
+
+truColorAx.plot(hurr_df.lon, 
+                hurr_df.lat,
+                c='black',
+                linestyle='--',
+                label='Hurricane Sam track',
+                transform=ccrs.PlateCarree())
+truColorAx.scatter(SD1045.data.longitude.values[SD1045.data.time == hurrtime], 
+               SD1045.data.latitude.values[SD1045.data.time == hurrtime], 
+               s=40, 
+               c='magenta',
+               marker='*',
+               transform=ccrs.PlateCarree())
+truColorAx.text(SD1045.data.longitude.values[SD1045.data.time == hurrtime]+0.1, 
+                SD1045.data.latitude.values[SD1045.data.time == hurrtime]+0.1,
+                'SD1045',
+                c='magenta',
+                transform=ccrs.PlateCarree())
+truColorAx.set_extent([-63.5, -55, 18.8, 26.96])
+truColorAx.gridlines(draw_labels=True)
+truColorAx.set_title("GOES 16 True Color 2021-9-30 14:59:58Z")
+
+plt.savefig('/Users/nicholasforcone/GustinessRepo/FIGURES/sam_and_saildrone', dpi=350)
+
+# %%
+import rasterio
+from rasterio.plot import show
+from metpy.plots import colortables
+from tropycal import tracks
+
+basin = tracks.TrackDataset('north_atlantic')
+storm = basin.get_storm(('Sam', 2021))
+hurr_df=storm.to_dataframe()
+
+# link below donloads image
+# http://mcfetch.ssec.wisc.edu/cgi-bin/mcfetch?dkey=6n4qrmk9-1890-3h6g-qthn-h8o4pjom2tn4&satellite=GOES16&date=2021-09-30&time=15:00:20&output=GEOTIFF&size=480+640&lat=23+60&mag=-3&band=2&coverage=FD
+sat_fig, sat_ax = plt.subplots()
+fp = r'/Users/nicholasforcone/Downloads/goes16_2_2021_273_1500.tif'
+img = rasterio.open(fp)
+wv_cmap = colortables.get_colortable('WVCIMSS')
+rast = show(img, ax=sat_ax)
+hurrtime = np.datetime64('2021-09-30 15:00:00')
+sat_ax.scatter(SD1045.data.longitude.values[SD1045.data.time == hurrtime], 
+               SD1045.data.latitude.values[SD1045.data.time == hurrtime], 
+               s=40, 
+               c='magenta',
+               marker='*')
+# sat_ax.scatter(hurr_df.lon, 
+#                hurr_df.lat,
+#                c='black',
+#                s=30,
+#                label='Hurricane Sam track')
+sat_ax.plot(hurr_df.lon, 
+            hurr_df.lat,
+            c='black',
+            linestyle='--',
+            label='Hurricane Sam track')
+sat_ax.text(SD1045.data.longitude.values[SD1045.data.time == hurrtime]+0.1, 
+            SD1045.data.latitude.values[SD1045.data.time == hurrtime]+0.1,
+            'SD1045',
+            c='magenta')
+plt.colorbar(rast.get_images()[0])
+sat_ax.set_xlim(-65.65, -54)
+sat_ax.set_ylim(18.30, 27.9)
+
